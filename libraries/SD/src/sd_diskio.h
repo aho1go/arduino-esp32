@@ -18,7 +18,7 @@
 #include "SPI.h"
 #include "sd_defines.h"
 
-uint8_t sdcard_init(uint8_t cs, SPIClass * spi, int hz);
+uint8_t sdcard_init(uint8_t cs, SPIClass * spi, int hz, const char * lockcode, int lockcode_len);
 uint8_t sdcard_uninit(uint8_t pdrv);
 
 bool sdcard_mount(uint8_t pdrv, const char* path);
@@ -27,5 +27,7 @@ uint8_t sdcard_unmount(uint8_t pdrv);
 sdcard_type_t sdcard_type(uint8_t pdrv);
 uint32_t sdcard_num_sectors(uint8_t pdrv);
 uint32_t sdcard_sector_size(uint8_t pdrv);
+
+bool sdLockUnlock(uint8_t pdrv, const char* buffer, int len, char mode );
 
 #endif /* _SD_DISKIO_H_ */

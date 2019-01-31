@@ -55,6 +55,9 @@ typedef struct {
     unsigned long sectors;
     bool supports_crc;
     int status;
+
+    const char * lockcode;
+    int lockcode_len;
 } ardu_sdcard_t;
 
 static ardu_sdcard_t* s_cards[FF_VOLUMES] = { NULL };
@@ -416,6 +419,58 @@ unsigned long sdGetSectorsCount(uint8_t pdrv)
     return 0;
 }
 
+bool sdLockUnlock(uint8_t pdrv, const char* buffer, int len, char mode )
+{
+    ardu_sdcard_t * card = s_cards[pdrv];
+    unsigned short crc;
+    char token;
+    char cmdPacket[16+2];
+
+    if(!sdSelectCard(pdrv)) {
+        return false;
+    }
+
+    cmdPacket[0] = 42 | 0x40;
+    cmdPacket[1] = 0;
+    cmdPacket[2] = 0;
+    cmdPacket[3] = 0;
+    cmdPacket[4] = 0;
+    cmdPacket[5] = (CRC7(cmdPacket, 5) << 1) | 0x00;  //0x01;  //0x28;
+    cmdPacket[6] = 0xFF;
+    card->spi->writeBytes((uint8_t*)cmdPacket, 7);
+
+    for (int i = 0; i < 9; i++) {
+        token = card->spi->transfer(0xFF);
+        if ((token & 0x80)==0x00) {
+            break;
+        }
+    }
+
+    if((token&0x80)==0x00) {
+        // Data Token
+        card->spi->write(0xFE);   // Data Token
+
+        // Data Block
+        memset(cmdPacket, 0xFF, sizeof(cmdPacket));
+        cmdPacket[0] = mode;
+        cmdPacket[1] = len;
+        memcpy(&cmdPacket[2], buffer, len);
+        card->spi->writeBytes((uint8_t*)cmdPacket, 16+2);
+
+        // CRC
+        crc = CRC16(cmdPacket, 16+2);
+        card->spi->write16(crc);
+
+        // Wait for Data Response
+        uint32_t start = millis();
+        do {
+            token = card->spi->transfer(0xFF);
+        } while (token == 0xFF && (millis() - start) < 500);
+    }
+    sdDeselectCard(pdrv);
+
+    return true;
+}
 
 namespace
 {
@@ -547,6 +602,13 @@ DSTATUS ff_sd_initialize(uint8_t pdrv)
         }
     }
 
+    if ((card->lockcode != NULL) && (card->lockcode_len > 0)) {
+        if (sdTransaction(pdrv, SET_BLOCKLEN, 16+2, NULL) == 0x00) {
+            sdLockUnlock(pdrv, card->lockcode, card->lockcode_len, 0x02);
+            sdTransaction(pdrv, SET_BLOCKLEN, 512, NULL);
+        }
+    }
+
     if (card->type != CARD_SDHC) {
         if (sdTransaction(pdrv, SET_BLOCKLEN, 512, NULL) != 0x00) {
             log_w("SET_BLOCKLEN failed");
@@ -658,7 +720,7 @@ uint8_t sdcard_uninit(uint8_t pdrv)
     return err;
 }
 
-uint8_t sdcard_init(uint8_t cs, SPIClass * spi, int hz)
+uint8_t sdcard_init(uint8_t cs, SPIClass * spi, int hz, const char * lockcode, int lockcode_len)
 {
 
     uint8_t pdrv = 0xFF;
@@ -679,6 +741,9 @@ uint8_t sdcard_init(uint8_t cs, SPIClass * spi, int hz)
     card->supports_crc = true;
     card->type = CARD_NONE;
     card->status = STA_NOINIT;
+
+    card->lockcode = lockcode;
+    card->lockcode_len = lockcode_len;
 
     pinMode(card->ssPin, OUTPUT);
     digitalWrite(card->ssPin, HIGH);

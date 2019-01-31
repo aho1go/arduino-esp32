@@ -28,7 +28,7 @@ protected:
 
 public:
     SDFS(FSImplPtr impl);
-    bool begin(uint8_t ssPin=SS, SPIClass &spi=SPI, uint32_t frequency=4000000, const char * mountpoint="/sd");
+    bool begin(uint8_t ssPin=SS, SPIClass &spi=SPI, uint32_t frequency=4000000, const char * mountpoint="/sd", const char * lockcode=NULL, int lockcode_len=0);
     void end();
     sdcard_type_t cardType();
     uint64_t cardSize();
